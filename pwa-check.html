@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PWA ফাইল পরীক্ষা (v3)</title>
+<style>
+  body{font-family:system-ui,sans-serif;margin:0;padding:14px;background:#f8fafc;color:#0f172a;font-size:14px}
+  h1{font-size:19px;margin:0 0 6px} p.note{color:#475569;margin:0 0 12px}
+  table{width:100%;border-collapse:collapse;background:#fff}
+  th,td{border:1px solid #e2e8f0;padding:7px;text-align:left;vertical-align:top;word-break:break-word}
+  .ok{color:#15803d;font-weight:700} .bad{color:#b91c1c;font-weight:700} .warn{color:#b45309;font-weight:700}
+  img.thumb{height:44px;width:44px;object-fit:contain;background:#0a4d33;border-radius:8px;display:block}
+  code{background:#eef2f7;padding:1px 4px;border-radius:4px}
+</style>
+</head>
+<body>
+<h1>PWA ফাইল পরীক্ষা (v3)</h1>
+<p class="note">এই পাতা প্রতিটি ফাইলের আসল ধরন ও আকার যাচাই করে। PWABuilder যেসব সমস্যা দেখায়, সেগুলোর কারণ এখানে দেখা যাবে। সমস্যা মিটলে এই ফাইলটি delete করুন।</p>
+<table>
+  <thead><tr><th>ফাইল</th><th>ধরন (আসল)</th><th>আকার</th><th>ফল</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<script>
+(function () {
+  var rows = document.getElementById('rows');
+  var PNG = '89504e470d0a1a0a';
+
+  function detect(b) {
+    var hex = Array.prototype.map.call(b.slice(0, 12), function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+    if (hex.indexOf(PNG) === 0) return 'image/png';
+    if (hex.indexOf('ffd8ff') === 0) return 'image/jpeg';
+    if (hex.indexOf('52494646') === 0 && hex.slice(16, 24) === '57454250') return 'image/webp';
+    if (hex.indexOf('47494638') === 0) return 'image/gif';
+    if (hex.indexOf('3c') === 0 || hex.indexOf('3c21') === 0) return 'text/html (404 পাতা হতে পারে)';
+    return 'অজানা';
+  }
+  function row(cells, verdict, cls) {
+    var tr = document.createElement('tr');
+    cells.forEach(function (c) { var td = document.createElement('td'); if (c instanceof Node) td.appendChild(c); else td.innerHTML = c; tr.appendChild(td); });
+    var v = document.createElement('td'); v.innerHTML = '<span class="' + cls + '">' + verdict + '</span>'; tr.appendChild(v);
+    rows.appendChild(tr);
+  }
+  function getBytes(url) {
+    return fetch(url, { cache: 'no-store' }).then(function (r) {
+      return r.arrayBuffer().then(function (ab) { return { status: r.status, ctype: r.headers.get('content-type') || '', bytes: new Uint8Array(ab) }; });
+    });
+  }
+  function loadImg(url) {
+    return new Promise(function (resolve) {
+      var img = new Image();
+      img.onload = function () { resolve({ ok: true, w: img.naturalWidth, h: img.naturalHeight, img: img }); };
+      img.onerror = function () { resolve({ ok: false }); };
+      img.src = url + (url.indexOf('?') > -1 ? '&' : '?') + 'v=' + Date.now();
+    });
+  }
+
+  var base = new URL('./', location.href);
+  var manifestUrl = new URL('manifest.json', base).href;
+  getBytes(manifestUrl).then(function (r) {
+    var text = new TextDecoder().decode(r.bytes);
+    var m = null;
+    try { m = JSON.parse(text); } catch (e) {}
+    row(['manifest.json', '<code>' + manifestUrl.split('/').slice(-2).join('/') + '</code>'], m ? 'ঠিক আছে (JSON)' : 'JSON ভুল বা পাওয়া যায়নি', m ? 'ok' : 'bad');
+    if (!m) return;
+    (m.icons || []).forEach(function (ic) {
+      var url = new URL(ic.src, manifestUrl).href;
+      var declared = ic.sizes + ' · ' + ic.type + ' · ' + ic.purpose;
+      Promise.all([getBytes(url), loadImg(url)]).then(function (res) {
+        var f = res[0], im = res[1];
+        var real = detect(f.bytes);
+        var sizeTxt = im.ok ? (im.w + 'x' + im.h) : 'লোড হয়নি';
+        var problems = [];
+        if (f.status !== 200) problems.push('HTTP ' + f.status + ' (ফাইল পাওয়া যায়নি)');
+        if (real !== ic.type) problems.push('আসল ধরন ' + real + ', manifest-এ ' + ic.type);
+        if (im.ok && sizeTxt !== ic.sizes) problems.push('আসল আকার ' + sizeTxt + ', manifest-এ ' + ic.sizes);
+        var nameCell = '<code>' + ic.src + '</code><br><small>' + declared + '</small>';
+        var thumb = im.ok ? im.img.cloneNode() : document.createElement('span');
+        if (im.ok) { thumb.className = 'thumb'; thumb.removeAttribute('width'); }
+        var cell = document.createElement('div'); cell.innerHTML = nameCell;
+        row([cell, real, sizeTxt], problems.length ? problems.join('; ') : 'ঠিক আছে', problems.length ? 'bad' : 'ok');
+      });
+    });
+  });
+
+  [['sw.js', './sw.js', 'javascript'], ['index.html', './index.html', 'html']].forEach(function (f) {
+    getBytes(new URL(f[1], base).href).then(function (r) {
+      var good = r.status === 200 && r.ctype.indexOf(f[2]) > -1;
+      row(['<code>' + f[0] + '</code>', r.ctype || '-', 'HTTP ' + r.status], good ? 'ঠিক আছে' : 'সমস্যা (404 বা ভুল ধরন)', good ? 'ok' : 'bad');
+    });
+  });
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(function (regs) {
+      row(['service worker নিবন্ধন', location.href, regs.length ? 'নিবন্ধিত' : 'নেই'],
+        regs.length ? 'ঠিক আছে' : 'নিবন্ধিত নয় (sw.js বা HTTPS সমস্যা)', regs.length ? 'ok' : 'warn');
+    });
+  }
+  row(['assetlinks.json (মূল domain)', new URL('/.well-known/assetlinks.json', location.href).href, '-'],
+    'project page-এ এটি পাওয়া যাবে না — এটি স্বাভাবিক; মূল domain-এর repository-তে থাকা দরকার', 'warn');
+})();
+</script>
+</body>
+</html>
