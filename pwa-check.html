@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PWA ফাইল পরীক্ষা</title>
+<style>
+  body{font-family:system-ui,sans-serif;margin:0;padding:16px;background:#f8fafc;color:#0f172a}
+  h1{font-size:20px;margin:0 0 6px} p.note{font-size:13px;color:#475569;margin:0 0 14px}
+  table{width:100%;border-collapse:collapse;background:#fff;font-size:14px}
+  th,td{border:1px solid #e2e8f0;padding:8px;text-align:left;vertical-align:top}
+  .ok{color:#15803d;font-weight:700} .bad{color:#b91c1c;font-weight:700}
+  img.thumb{height:48px;width:48px;object-fit:contain;background:#0a4d33;border-radius:8px}
+</style>
+</head>
+<body>
+<h1>PWA ফাইল পরীক্ষা</h1>
+<p class="note">এই পাতাটি PWABuilder-এর সমস্যার কারণ খুঁজে বের করতে সাহায্য করে। সমস্যার সমাধান হলে এই ফাইলটি delete করে দিন।</p>
+<table>
+  <thead><tr><th>ফাইল</th><th>ঠিকানা</th><th>অবস্থা</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<script>
+(function () {
+  var rows = document.getElementById('rows');
+  function add(name, url, ok, detail, thumb) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + name + '</td><td style="word-break:break-all">' + url + '</td><td class="' +
+      (ok ? 'ok' : 'bad') + '">' + (ok ? 'ঠিক আছে' : 'সমস্যা') + (detail ? '<br><small>' + detail + '</small>' : '') + '</td>';
+    if (thumb) tr.children[2].appendChild(thumb);
+    rows.appendChild(tr);
+  }
+  function fetchCheck(name, rel) {
+    var url = new URL(rel, location.href).href;
+    return fetch(url, { cache: 'no-store' }).then(function (r) {
+      add(name, url, r.ok, 'HTTP ' + r.status + ' · ' + (r.headers.get('content-type') || 'type নেই'));
+      return r;
+    }).catch(function (e) { add(name, url, false, String(e)); });
+  }
+  function imgCheck(name, rel) {
+    var url = new URL(rel, location.href).href;
+    var img = new Image();
+    img.className = 'thumb';
+    img.onload = function () { add(name, url, true, img.naturalWidth + ' × ' + img.naturalHeight + ' px', img); };
+    img.onerror = function () { add(name, url, false, 'ছবিটি পাওয়া যায়নি (404)'); };
+    img.src = url;
+  }
+  fetchCheck('manifest.json', './manifest.json').then(function (r) {
+    if (!r || !r.ok) return;
+    return r.json().then(function (m) {
+      ['icon-192.png', 'icon-512.png', 'icon-maskable-512.png'].forEach(function (f) { imgCheck('আইকন ' + f, './' + f); });
+    }).catch(function () { add('manifest.json', './manifest.json', false, 'JSON পড়া যায়নি'); });
+  });
+  fetchCheck('service worker', './sw.js');
+  fetchCheck('মূল পেজ', './index.html');
+  fetchCheck('assetlinks (শুধু domain-এর মূল স্তরে কাজ করে)', '/.well-known/assetlinks.json');
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(function (regs) {
+      add('service worker নিবন্ধন', location.href, regs.length > 0,
+        regs.length ? 'নিবন্ধিত' : 'নিবন্ধিত নয় (সাধারণত sw.js-এর 404 বা HTTPS না থাকলে)');
+    });
+  }
+})();
+</script>
+</body>
+</html>
