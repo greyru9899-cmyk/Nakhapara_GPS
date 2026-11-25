@@ -5,7 +5,7 @@
  * - Other same-origin files: cache first, then network.
  * - Other origins (CDNs, Firebase, APIs): always the network, never cached here.
  */
-const CACHE = 'nakhapara-shell-v3';
+const CACHE = 'nakhapara-shell-v4';
 const BASE = new URL('./', self.location.href).href;
 const PAGE = new URL('./index.html', self.location.href).href;
 const SHELL = [
